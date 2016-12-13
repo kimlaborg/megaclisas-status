@@ -129,6 +129,7 @@ def returnDiskInfo(output, controllerid):
 if __name__ == '__main__':
 
     binarypath = "/usr/bin/megacli"
+    report = ''
 
     if os.getenv('USER') != 'root':
         print 'You can only run this script as root or with sudo, sucks I know. Blame the RAID card'
@@ -173,8 +174,8 @@ if __name__ == '__main__':
 
     # List available controller
     if not nagiosmode:
-        print '-- Controller informations --'
-        print '-- ID | Model | Firmware'
+        report += '-- Controller informations --\n'
+        report += '-- ID | Model | Firmware\n'
         controllerid = 0
         while controllerid < controllernumber:
             cmd = '%s -AdpAllInfo -a%d -NoLog' % (binarypath, controllerid)
@@ -187,8 +188,8 @@ if __name__ == '__main__':
 
     controllerid = 0
     if not nagiosmode:
-        print '-- Arrays informations --'
-        print '-- ID | Type | Size | Status | InProgress'
+        report +=  '-- Arrays informations --\n'
+        report +=  '-- ID | Type | Size | Status | InProgress\n'
 
     while controllerid < controllernumber:
         cmd = '%s -LdInfo -Lall -a%d -NoLog' % (binarypath, controllerid)
@@ -215,12 +216,10 @@ if __name__ == '__main__':
 
         controllerid += 1
 
-    if not nagiosmode:
-        print ''
 
     if not nagiosmode:
-        print '-- Disks informations'
-        print '-- ID | Model | Status'
+        report +=  '\n\n-- Disks informations\n'
+        report +=  '-- ID | Model | Status\n'
 
     controllerid = 0
     while controllerid < controllernumber:
@@ -237,7 +236,7 @@ if __name__ == '__main__':
             else:
                 nagiosgooddisk += 1
             if not nagiosmode:
-                print 'c%du%sp%s | %s | %s' % (controllerid, array[0],
+                report += 'c%du%sp%s | %s | %s\n' % (controllerid, array[0],
                         array[1], array[3], array[2])
         controllerid += 1
 
@@ -245,11 +244,14 @@ if __name__ == '__main__':
         status_line = 'Arrays: OK:%d Bad:%d - Disks: OK:%d Bad:%d' % \
                     (nagiosgoodarray, nagiosbadarray, nagiosgooddisk, nagiosbaddisk)
         if bad:
-            print 'RAID ERROR - ' + status_line
+            report += 'RAID ERROR - \n' + status_line
+            print report
             sys.exit(2)
         else:
-            print 'RAID OK - ' + status_line
+            report += 'RAID OK - \n' + status_line
+            print report
     else:
         if bad:
+            print report
             print '\nThere is at least one disk/array in a NOT OPTIMAL state.'
             sys.exit(1)
