@@ -129,7 +129,7 @@ def returnDiskInfo(output, controllerid):
 # We need root access to query
 if __name__ == '__main__':
 
-    binarypath = "/usr/bin/megacli"
+    binarypath = "/opt/MegaRAID/MegaCli/MegaCli64"
     report = ''
 
     if os.getenv('USER') != 'root':
@@ -166,7 +166,7 @@ if __name__ == '__main__':
         cmd = '%s -AdpAllInfo -a%d -NoLog' % (binarypath, controllerid)
         output = getOutput(cmd)
         controllermodel = returnControllerModel(output)
-	    firmwareversion = returnControllerFirmware(output)
+        firmwareversion = returnControllerFirmware(output)
         report +=  'c%d | %s | %s\n' % (controllerid, controllermodel, firmwareversion)
 
 
@@ -204,7 +204,7 @@ if __name__ == '__main__':
     report +=  '-- ID | Model | Status\n'
 
 
-    for controllerid in range(controllernumber)::
+    for controllerid in range(controllernumber):
         arrayid = 0
         cmd = '%s -LDInfo -lall -a%d -NoLog' % (binarypath, controllerid)
         output = getOutput(cmd)
@@ -221,6 +221,9 @@ if __name__ == '__main__':
             report += 'c%du%sp%s | %s | %s\n' % (controllerid, array[0],
                         array[1], array[3], array[2])
 
+    # summary
+    status_line = 'Arrays: OK:%d Bad:%d - Disks: OK:%d Bad:%d' % \
+                (nagiosgoodarray, nagiosbadarray, nagiosgooddisk, nagiosbaddisk)
 
 
     if bad:
