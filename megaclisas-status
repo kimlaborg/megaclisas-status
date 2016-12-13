@@ -4,45 +4,6 @@ import os
 import re
 import sys
 
-binarypath = "/usr/bin/megacli"
-
-# Adding a quick check to see if we're root, because on most cards I've tried this on
-# We need root access to query
-if __name__ == '__main__':
-    if os.getenv('USER') != 'root':
-        print 'You can only run this script as root or with sudo, sucks I know. Blame the RAID card'
-        sys.exit(5)
-
-if len(sys.argv) > 2:
-    print 'Usage: megaclisas-status [--nagios]'
-    sys.exit(1)
-
-nagiosmode = False
-nagiosoutput = ''
-nagiosgoodarray = 0
-nagiosbadarray = 0
-nagiosgooddisk = 0
-nagiosbaddisk = 0
-
-# Check command line arguments to enable nagios or not
-if len(sys.argv) > 1:
-    if sys.argv[1] == '--nagios':
-        nagiosmode = True
-    else:
-        print 'Usage: megaclisas-status [--nagios]'
-        sys.exit(1)
-
-# Check binary exists (and +x), if not print an error message
-# or return UNKNOWN nagios error code
-if os.path.exists(binarypath) and os.access(binarypath, os.X_OK):
-    pass
-else:
-    if nagiosmode:
-        print 'UNKNOWN - Cannot find ' + binarypath
-    else:
-        print 'Cannot find ' + binarypath + '. Please install it.'
-    sys.exit(3)
-
 
 # Get command output
 def getOutput(cmd):
@@ -66,7 +27,7 @@ def returnControllerModel(output):
     for line in output:
         if re.match(r'^Product Name.*$', line.strip()):
             return line.split(':')[1].strip()
-			
+
 def returnControllerFirmware(output):
     for line in output:
         if re.match(r'^FW Package Build.*$', line.strip()):
@@ -160,89 +121,135 @@ def returnDiskInfo(output, controllerid):
 
     return table
 
-cmd = binarypath + ' -adpCount -NoLog'
-output = getOutput(cmd)
-controllernumber = returnControllerNumber(output)
 
-bad = False
 
-# List available controller
-if not nagiosmode:
-    print '-- Controller informations --'
-    print '-- ID | Model | Firmware'
+
+# Adding a quick check to see if we're root, because on most cards I've tried this on
+# We need root access to query
+if __name__ == '__main__':
+
+    binarypath = "/usr/bin/megacli"
+
+    if os.getenv('USER') != 'root':
+        print 'You can only run this script as root or with sudo, sucks I know. Blame the RAID card'
+        sys.exit(5)
+
+    if len(sys.argv) > 2:
+        print 'Usage: megaclisas-status [--nagios]'
+        sys.exit(1)
+
+    nagiosmode = False
+    nagiosoutput = ''
+    nagiosgoodarray = 0
+    nagiosbadarray = 0
+    nagiosgooddisk = 0
+    nagiosbaddisk = 0
+
+    # Check command line arguments to enable nagios or not
+    if len(sys.argv) > 1:
+        if sys.argv[1] == '--nagios':
+            nagiosmode = True
+        else:
+            print 'Usage: megaclisas-status [--nagios]'
+            sys.exit(1)
+
+    # Check binary exists (and +x), if not print an error message
+    # or return UNKNOWN nagios error code
+    if os.path.exists(binarypath) and os.access(binarypath, os.X_OK):
+        pass
+    else:
+        if nagiosmode:
+            print 'UNKNOWN - Cannot find ' + binarypath
+        else:
+            print 'Cannot find ' + binarypath + '. Please install it.'
+        sys.exit(3)
+
+
+    cmd = binarypath + ' -adpCount -NoLog'
+    output = getOutput(cmd)
+    controllernumber = returnControllerNumber(output)
+
+    bad = False
+
+    # List available controller
+    if not nagiosmode:
+        print '-- Controller informations --'
+        print '-- ID | Model | Firmware'
+        controllerid = 0
+        while controllerid < controllernumber:
+            cmd = '%s -AdpAllInfo -a%d -NoLog' % (binarypath, controllerid)
+            output = getOutput(cmd)
+            controllermodel = returnControllerModel(output)
+    	    firmwareversion = returnControllerFirmware(output)
+            print 'c%d | %s | %s' % (controllerid, controllermodel, firmwareversion)
+            controllerid += 1
+        print ''
+
+    controllerid = 0
+    if not nagiosmode:
+        print '-- Arrays informations --'
+        print '-- ID | Type | Size | Status | InProgress'
+
+    while controllerid < controllernumber:
+        cmd = '%s -LdInfo -Lall -a%d -NoLog' % (binarypath, controllerid)
+        arrayoutput = getOutput(cmd)
+        arrayid = returnNextArrayNumber(arrayoutput,-1)
+        cmd = '%s -LdGetNum -a%d -NoLog' % (binarypath, controllerid)
+        output = getOutput(cmd)
+        arraynumber = int(returnArrayNumber(output))
+        while arraynumber > 0:
+            cmd = '%s -LDInfo -l%d -a%d -NoLog' % (binarypath,
+                                                    arrayid, controllerid)
+            output = getOutput(cmd)
+            arrayinfo = returnArrayInfo(output, controllerid, arrayid)
+            if not nagiosmode:
+                print ' | '.join(arrayinfo)
+            if not arrayinfo[3] == 'Optimal':
+                bad = True
+                nagiosbadarray += 1
+            else:
+                nagiosgoodarray += 1
+            #arrayid += 1
+        	arrayid = returnNextArrayNumber(arrayoutput,arrayid)
+        	arraynumber -= 1
+
+        controllerid += 1
+
+    if not nagiosmode:
+        print ''
+
+    if not nagiosmode:
+        print '-- Disks informations'
+        print '-- ID | Model | Status'
+
     controllerid = 0
     while controllerid < controllernumber:
-        cmd = '%s -AdpAllInfo -a%d -NoLog' % (binarypath, controllerid)
+        arrayid = 0
+        cmd = '%s -LDInfo -lall -a%d -NoLog' % (binarypath, controllerid)
         output = getOutput(cmd)
-        controllermodel = returnControllerModel(output)
-	firmwareversion = returnControllerFirmware(output)
-        print 'c%d | %s | %s' % (controllerid, controllermodel, firmwareversion)
+        cmd = '%s -LdPdInfo -a%d -NoLog' % (binarypath, controllerid)
+        output = getOutput(cmd)
+        arraydisk = returnDiskInfo(output, controllerid)
+        for array in arraydisk:
+            if not array[2] == 'Online' and not array[2] == 'Online, Spun Up':
+                bad = True
+                nagiosbaddisk += 1
+            else:
+                nagiosgooddisk += 1
+            if not nagiosmode:
+                print 'c%du%sp%s | %s | %s' % (controllerid, array[0],
+                        array[1], array[3], array[2])
         controllerid += 1
-    print ''
 
-controllerid = 0
-if not nagiosmode:
-    print '-- Arrays informations --'
-    print '-- ID | Type | Size | Status | InProgress'
-
-while controllerid < controllernumber:
-    cmd = '%s -LdInfo -Lall -a%d -NoLog' % (binarypath, controllerid)
-    arrayoutput = getOutput(cmd)
-    arrayid = returnNextArrayNumber(arrayoutput,-1)
-    cmd = '%s -LdGetNum -a%d -NoLog' % (binarypath, controllerid)
-    output = getOutput(cmd)
-    arraynumber = int(returnArrayNumber(output))
-    while arraynumber > 0:
-        cmd = '%s -LDInfo -l%d -a%d -NoLog' % (binarypath,
-                                                arrayid, controllerid)
-        output = getOutput(cmd)
-        arrayinfo = returnArrayInfo(output, controllerid, arrayid)
-        if not nagiosmode:
-            print ' | '.join(arrayinfo)
-        if not arrayinfo[3] == 'Optimal':
-            bad = True
-            nagiosbadarray += 1
+    if nagiosmode:
+        status_line = 'Arrays: OK:%d Bad:%d - Disks: OK:%d Bad:%d' % \
+                    (nagiosgoodarray, nagiosbadarray, nagiosgooddisk, nagiosbaddisk)
+        if bad:
+            print 'RAID ERROR - ' + status_line
+            sys.exit(2)
         else:
-            nagiosgoodarray += 1
-        #arrayid += 1
-	arrayid = returnNextArrayNumber(arrayoutput,arrayid)
-	arraynumber -= 1
-    controllerid += 1
-if not nagiosmode:
-    print ''
-
-if not nagiosmode:
-    print '-- Disks informations'
-    print '-- ID | Model | Status'
-
-controllerid = 0
-while controllerid < controllernumber:
-    arrayid = 0
-    cmd = '%s -LDInfo -lall -a%d -NoLog' % (binarypath, controllerid)
-    output = getOutput(cmd)
-    cmd = '%s -LdPdInfo -a%d -NoLog' % (binarypath, controllerid)
-    output = getOutput(cmd)
-    arraydisk = returnDiskInfo(output, controllerid)
-    for array in arraydisk:
-        if not array[2] == 'Online' and not array[2] == 'Online, Spun Up':
-            bad = True
-            nagiosbaddisk += 1
-        else:
-            nagiosgooddisk += 1
-        if not nagiosmode:
-            print 'c%du%sp%s | %s | %s' % (controllerid, array[0],
-                    array[1], array[3], array[2])
-    controllerid += 1
-
-if nagiosmode:
-    status_line = 'Arrays: OK:%d Bad:%d - Disks: OK:%d Bad:%d' % \
-                (nagiosgoodarray, nagiosbadarray, nagiosgooddisk, nagiosbaddisk)
-    if bad:
-        print 'RAID ERROR - ' + status_line
-        sys.exit(2)
+            print 'RAID OK - ' + status_line
     else:
-        print 'RAID OK - ' + status_line
-else:
-    if bad:
-        print '\nThere is at least one disk/array in a NOT OPTIMAL state.'
-        sys.exit(1)
+        if bad:
+            print '\nThere is at least one disk/array in a NOT OPTIMAL state.'
+            sys.exit(1)
