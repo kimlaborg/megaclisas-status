@@ -44,9 +44,9 @@ def returnArrayNumber(output):
 def returnNextArrayNumber(output,curNumber):
     #Virtual Drive: 2 (Target Id: 2)
     for line in output:
-	vdisk = re.match(r'^Virtual Drive: \d+ \(Target Id: (\d+)\)$', line.strip())
+        vdisk = re.match(r'^Virtual Drive: \d+ \(Target Id: (\d+)\)$', line.strip())
         if vdisk and int(vdisk.group(1)) > curNumber:
-	    return int(vdisk.group(1))
+            return int(vdisk.group(1))
     return -1
 
 def returnArrayInfo(output, controllerid, arrayid):
