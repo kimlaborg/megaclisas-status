@@ -196,8 +196,8 @@ if __name__ == '__main__':
             else:
                 nagiosgoodarray += 1
             #arrayid += 1
-        	arrayid = returnNextArrayNumber(arrayoutput,arrayid)
-        	arraynumber -= 1
+            arrayid = returnNextArrayNumber(arrayoutput,arrayid)
+            arraynumber -= 1
 
 
     report +=  '\n\n-- Disks informations\n'
@@ -221,6 +221,8 @@ if __name__ == '__main__':
             report += 'c%du%sp%s | %s | %s\n' % (controllerid, array[0],
                         array[1], array[3], array[2])
 
+
+    report += '\n\n'
     # summary
     status_line = 'Arrays: OK:%d Bad:%d - Disks: OK:%d Bad:%d' % \
                 (nagiosgoodarray, nagiosbadarray, nagiosgooddisk, nagiosbaddisk)
