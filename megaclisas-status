@@ -23,6 +23,24 @@ def returnControllerNumber(output):
             return int(line.split(':')[1].strip().strip('.'))
 
 
+def returnVirtualdevices(output):
+    wrapped = dict()
+    deviceLables = ['Virtual Drives',
+                  'Degraded',
+                  '  Offline  ',
+                  'Physical Devices',
+                  'Critical Disks  ',
+                  'Failed Disks']
+
+    for line in output:
+        line = line.strip()
+        for dlabel in deviceLables:
+            if re.match(dlabel, line):
+                wrapped[dlabel.strip()] = int(line.split(':')[1].strip().strip('.'))
+
+    return wrapped
+
+
 def returnControllerModel(output):
     for line in output:
         if re.match(r'^Product Name.*$', line.strip()):
@@ -96,29 +114,36 @@ def returnArrayInfo(output, controllerid, arrayid):
     return [_id, raid_type, size, state, inprogress]
 
 
-def returnDiskInfo(output, controllerid):
-
-    arrayid = False
+def returnDiskInfo(output):
     diskid = False
+    smart = False
+    temp = False
     table = []
     state = 'undef'
     model = 'undef'
     for line in output:
         line = line.strip()
-        if re.match(r'^Virtual (Disk|Drive): [0-9]+.*$', line):
-            arrayid = line.split('(')[0].split(':')[1].strip()
+
+        if re.match(r'PD: [0-9]+ Information.*$', line):
+            if diskid:
+                table.append(diskid, model, temp, state, smart)
+                diskid = line.split()[1].strip()
+            else:
+                diskid = line.split()[1].strip()
+
         if re.match(r'Firmware state: .*$', line):
             state = line.split(':')[1].strip()
         if re.match(r'Inquiry Data: .*$', line):
             model = line.split(':')[1].strip()
             model = re.sub(' +', ' ', model)
-        if re.match(r'PD: [0-9]+ Information.*$', line):
-            diskid = line.split()[1].strip()
 
-        if arrayid and state != 'undef' and model != 'undef' and diskid:
-            table.append([str(arrayid), str(diskid), state, model])
-            state = 'undef'
-            model = 'undef'
+        if re.match(r'^Drive Temperature', line):
+            temp = line.split(':')[1].split()[0].strip()
+
+        if re.match(r'Drive has flagged a S.M.A.R.T alert', line):
+            smart = line.split(':')[1].strip()
+
+
 
     return table
 
@@ -153,6 +178,8 @@ if __name__ == '__main__':
 
     # set number of Controllers
     cmd = binarypath + ' -adpCount -NoLog'
+    # output:
+    # Controller Count: 2.
     output = getOutput(cmd)
     controllernumber = returnControllerNumber(output)
 
@@ -163,11 +190,21 @@ if __name__ == '__main__':
     report += '-- ID | Model | Firmware\n'
     controllerid = 0
     for controllerid in range(controllernumber):
+
         cmd = '%s -AdpAllInfo -a%d -NoLog' % (binarypath, controllerid)
         output = getOutput(cmd)
         controllermodel = returnControllerModel(output)
         firmwareversion = returnControllerFirmware(output)
         report +=  'c%d | %s | %s\n' % (controllerid, controllermodel, firmwareversion)
+        # Check  Devices Status
+        report += '\n ---- Devices ---- \n'
+        infodevices =  returnDevices(output)
+
+        if infodevices['Offline'] or infodevices['Degraded'] or infodevices['Critical Disks'] or infodevices['Failed Disks']:
+            bad = True
+        # write report
+        for label, value in virtualdevices.items():
+            report += ' %s\t:%d' % (label, value)
 
 
     report +=  '\n'
@@ -178,10 +215,10 @@ if __name__ == '__main__':
         cmd = '%s -LdInfo -Lall -a%d -NoLog' % (binarypath, controllerid)
         arrayoutput = getOutput(cmd)
         arrayid = returnNextArrayNumber(arrayoutput,-1)
-        cmd = '%s -LdGetNum -a%d -NoLog' % (binarypath, controllerid)
+        cmqd = '%s -LdGetNum -a%d -NoLog' % (binarypath, controllerid)
         output = getOutput(cmd)
         arraynumber = int(returnArrayNumber(output))
-        while arraynumber > 0:
+        for i in range(arraynumber):
             cmd = '%s -LDInfo -l%d -a%d -NoLog' % (binarypath,
                                                     arrayid, controllerid)
             output = getOutput(cmd)
@@ -197,29 +234,35 @@ if __name__ == '__main__':
                 nagiosgoodarray += 1
             #arrayid += 1
             arrayid = returnNextArrayNumber(arrayoutput,arrayid)
-            arraynumber -= 1
+
 
 
     report +=  '\n\n-- Disks informations\n'
-    report +=  '-- ID | Model | Status\n'
+    report +=  '-- ID | Model | Temperature | Status| SMART Alert|\n'
 
 
     for controllerid in range(controllernumber):
         arrayid = 0
-        cmd = '%s -LDInfo -lall -a%d -NoLog' % (binarypath, controllerid)
+
+        # cmd = '%s -LdPdInfo -a%d -NoLog' % (binarypath, controllerid)
+        cmd = '%s -PDList -a%d -NoLog' % (binarypath, controllerid)
         output = getOutput(cmd)
-        cmd = '%s -LdPdInfo -a%d -NoLog' % (binarypath, controllerid)
-        output = getOutput(cmd)
-        arraydisk = returnDiskInfo(output, controllerid)
+        arraydisk = returnDiskInfo(output)
         for array in arraydisk:
-            if not array[2] == 'Online' and not array[2] == 'Online, Spun Up':
+            if not array[3] == 'Online' and not array[3] == 'Online, Spun Up':
                 bad = True
                 nagiosbaddisk += 1
             else:
                 nagiosgooddisk += 1
 
-            report += 'c%du%sp%s | %s | %s\n' % (controllerid, array[0],
-                        array[1], array[3], array[2])
+            if array[4] == 'Yes':
+                bad = True
+                nagiosbaddisk += 1
+            else:
+                nagiosgooddisk += 1
+
+            report += 'c%du%sp%s | %s | %s | %s |  %s|\n' % (controllerid, array[0],
+                        array[1], , array[2], array[3], array[4])
 
 
     report += '\n\n'
