@@ -26,8 +26,7 @@ def returnControllerNumber(output):
 
 def returnDevices(output):
     wrapped = dict()
-    deviceLables = ['Virtual Drives',
-                  'Degraded',
+    deviceLables = ['Degraded',
                   'Physical Devices',
                   'Critical Disks  ',
                   'Failed Disks']
@@ -196,7 +195,7 @@ if __name__ == '__main__':
 
     # List available controller
     report += '-- Controller informations --\n'
-    report += '-- ID | Model | Firmware\n'
+
     controllerid = 0
     for controllerid in range(controllernumber):
 
@@ -204,9 +203,10 @@ if __name__ == '__main__':
         output = getOutput(cmd)
         controllermodel = returnControllerModel(output)
         firmwareversion = returnControllerFirmware(output)
+        report += '-- ID | Model | Firmware\n'
         report +=  'c%d | %s | %s\n' % (controllerid, controllermodel, firmwareversion)
         # Check  Devices Status
-        report += '\n ---- Devices ---- \n'
+        report += '\n ---- Disk Summary ---- \n'
         infodevices =  returnDevices(output)
 
         if infodevices['Degraded'] or infodevices['Critical Disks'] or infodevices['Failed Disks']:
