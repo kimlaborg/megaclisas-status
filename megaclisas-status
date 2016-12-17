@@ -3,7 +3,8 @@
 import os
 import re
 import sys
-
+import smtplib
+from email.mime.text import MIMEText
 
 # Get command output
 def getOutput(cmd):
@@ -23,11 +24,10 @@ def returnControllerNumber(output):
             return int(line.split(':')[1].strip().strip('.'))
 
 
-def returnVirtualdevices(output):
+def returnDevices(output):
     wrapped = dict()
     deviceLables = ['Virtual Drives',
                   'Degraded',
-                  '  Offline  ',
                   'Physical Devices',
                   'Critical Disks  ',
                   'Failed Disks']
@@ -124,12 +124,12 @@ def returnDiskInfo(output):
     for line in output:
         line = line.strip()
 
-        if re.match(r'PD: [0-9]+ Information.*$', line):
+        if re.match(r'Slot Number:', line):
             if diskid:
-                table.append(diskid, model, temp, state, smart)
-                diskid = line.split()[1].strip()
+                table.append([diskid, model, temp, state, smart])
+                diskid = line.split(':')[1].strip()
             else:
-                diskid = line.split()[1].strip()
+                diskid = line.split(':')[1].strip()
 
         if re.match(r'Firmware state: .*$', line):
             state = line.split(':')[1].strip()
@@ -147,7 +147,16 @@ def returnDiskInfo(output):
 
     return table
 
+def sendalert(report, to='carles.corbi@gmail.com' ):
 
+    msg = MIMEText(report)
+    msg['Subject'] = "Kimstorage disk report alert"
+    msg['From'] = "kimstorage"
+    msg['To'] = to
+
+    s= smtplib.SMTP('localhost')
+    s.sendmail('kimstorage', to, msg.as_string())
+    s.quit()
 
 
 # Adding a quick check to see if we're root, because on most cards I've tried this on
@@ -200,11 +209,11 @@ if __name__ == '__main__':
         report += '\n ---- Devices ---- \n'
         infodevices =  returnDevices(output)
 
-        if infodevices['Offline'] or infodevices['Degraded'] or infodevices['Critical Disks'] or infodevices['Failed Disks']:
+        if infodevices['Degraded'] or infodevices['Critical Disks'] or infodevices['Failed Disks']:
             bad = True
         # write report
-        for label, value in virtualdevices.items():
-            report += ' %s\t:%d' % (label, value)
+        for label, value in infodevices.items():
+            report += ' %s\t:%d \n' % (label, value)
 
 
     report +=  '\n'
@@ -215,7 +224,7 @@ if __name__ == '__main__':
         cmd = '%s -LdInfo -Lall -a%d -NoLog' % (binarypath, controllerid)
         arrayoutput = getOutput(cmd)
         arrayid = returnNextArrayNumber(arrayoutput,-1)
-        cmqd = '%s -LdGetNum -a%d -NoLog' % (binarypath, controllerid)
+        cmq = '%s -LdGetNum -a%d -NoLog' % (binarypath, controllerid)
         output = getOutput(cmd)
         arraynumber = int(returnArrayNumber(output))
         for i in range(arraynumber):
@@ -238,7 +247,7 @@ if __name__ == '__main__':
 
 
     report +=  '\n\n-- Disks informations\n'
-    report +=  '-- ID | Model | Temperature | Status| SMART Alert|\n'
+    report +=  '-- Slot | Model | Temperature | Status| SMART Alert|\n'
 
 
     for controllerid in range(controllernumber):
@@ -248,8 +257,9 @@ if __name__ == '__main__':
         cmd = '%s -PDList -a%d -NoLog' % (binarypath, controllerid)
         output = getOutput(cmd)
         arraydisk = returnDiskInfo(output)
+
         for array in arraydisk:
-            if not array[3] == 'Online' and not array[3] == 'Online, Spun Up':
+            if not array[3] == 'Online' and not array[3] == 'Online, Spun Up' and not 'Hotspare, Spun down':
                 bad = True
                 nagiosbaddisk += 1
             else:
@@ -261,8 +271,8 @@ if __name__ == '__main__':
             else:
                 nagiosgooddisk += 1
 
-            report += 'c%du%sp%s | %s | %s | %s |  %s|\n' % (controllerid, array[0],
-                        array[1], , array[2], array[3], array[4])
+            report += 'c%dslot%s | %s | %s | %s |  %s|\n' % (controllerid, array[0],
+                        array[1], array[2], array[3], array[4])
 
 
     report += '\n\n'
@@ -275,6 +285,7 @@ if __name__ == '__main__':
         report += 'RAID ERROR - \n' + status_line
         print report
         print '\nThere is at least one disk/array in a NOT OPTIMAL state.'
+        sendalert(report)
         sys.exit(2)
     else:
         report += 'RAID OK - \n' + status_line
